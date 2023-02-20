@@ -1,0 +1,215 @@
+#+title: Ansible example
+
+* Let's setup our "VPS"
+
+I'll be using Vagrant to setup a clean Ubuntu VM.
+
+** Install DNS plugin for Vagrant
+
+Just so we can refer to our VM with hostname over an IP address.
+
+Will also come in handy later when dokku generates our third level host name based on our app name.
+
+#+begin_src sh
+vagrant plugin install dns
+#+end_src
+
+** Spin up the VM
+
+#+begin_src sh
+vagrant up
+#+end_src
+
+** Add DNS records on our system
+
+This will install systemd-resolved configs and enable them on our system.
+
+#+begin_src sh
+vagrant dns --install
+vagrant dns --start
+#+end_src
+
+** Add your ssh keys for root
+
+#+begin_src sh
+vagrant ssh
+sudo mkdir /root/.ssh
+sudo vim /root/.ssh/authorized_keys
+#+end_src
+
+Then append your key that should be in `~/.ssh/id_rsa.pub`
+
+* Let's deploy an example app
+
+I'll use one of my projects here: https://github.com/kotkowo/kotkowo
+
+It's a Phoenix 1.7 app with a postgres db.
+
+
+** Fetch my premade ansible book
+
+#+attr_html: :width 256px
+#+attr_latex: :width 256px
+[[./nixos.jpeg]]
+
+#+begin_src sh
+git clone https://github.com/kotkowo/kotkowo-playbook
+cd kotkowo-playbook
+
+# Nix users can fetch all system dependencies easily
+nix develop
+
+# Other plebs have to do additional steps of installing ansible and requirements.yml
+#+end_src
+
+** Setup secrets
+Remove the already existing secrets
+
+#+begin_src sh
+rm group_vars/all.yml
+#+end_src
+
+Jump into one of your phonenix projects and generate a secret key
+
+#+begin_src sh
+mix phx.gen.secret
+#+end_src
+
+Create your vault
+
+#+begin_src sh
+ansible-vault create group_vars/all.yml
+#+end_src
+
+And paste your key there
+
+#+begin_src yaml
+secret_key_base: |
+   <PASTE YOUR KEY HERE>
+#+end_src
+
+** Setup hosts
+
+Edit `hosts.yml` to setup your hosts
+
+#+begin_src yaml
+all:
+  children:
+    dokku:
+      hosts:
+        your_host_name:
+          ansible_host: your_host_url_or_ip_address
+          ansible_user: root
+#+end_src
+
+** OPTIONAL Remove Let's encrypt
+
+Let's encrypt will fail since our domain won't expose itself to the outside world
+
+Remove these lines:
+
+#+begin_src diff
+--- a/dokku.yml
++++ b/dokku.yml
+@@ -8,8 +8,6 @@
+         url: https://github.com/crisward/dokku-clone.git
+       - name: postgres
+         url: https://github.com/dokku/dokku-postgres.git
+-      - name: letsencrypt
+-        url: https://github.com/dokku/dokku-letsencrypt.git
+   tasks:
+     - name: postgres:create kotkowo
+       dokku_service_create:
+@@ -37,6 +35,3 @@
+       dokku_clone:
+         app: *kotkowo_app
+         repository: https://github.com/kotkowo/kotkowo
+-    - name: Enable the letsencrypt plugin for *kotkowo_app
+-      dokku_letsencrypt:
+-        app: *kotkowo_app
+#+end_src
+
+** Run the playbook
+
+#+begin_src sh
+ansible-playbook dokku.yml -i hosts.yml --ask-vault-pass
+#+end_src
+
+* Explanation time!
+
+[[./explanation.jpg]]
+
+** Ansible plugin system
+
+It's complicated...
+
+Just don't think much about it when starting
+
+*** Dokku role
+
+Dokku is not a part of the ansible project (obviously).
+
+But there is a cool role created to make everything easy!
+
+#+begin_src yaml
+# requirements.yml
+roles:
+- name: dokku_bot.ansible_dokku
+  version: v2022.10.17
+#+end_src
+
+Then we can install our requirements like this:
+
+#+begin_src sh
+ansible-galaxy install -r requirements.yml
+#+end_src
+
+** Dokku plugins!
+
+What's great is that you can easily install dokku plugins with a simple declaration inside `dokku.yml`
+
+#+begin_src yaml
+    dokku_plugins:
+      - name: clone
+        url: https://github.com/crisward/dokku-clone.git
+      - name: postgres
+        url: https://github.com/dokku/dokku-postgres.git
+      - name: letsencrypt
+        url: https://github.com/dokku/dokku-letsencrypt.git
+#+end_src
+
+** The pipeline!
+
+#+begin_src yaml
+  tasks:
+    - name: postgres:create kotkowo
+      dokku_service_create:
+        name: &kotkowo_db kotkowo
+        service: postgres
+    - name: Create kotkowo app
+      dokku_app:
+        app: &kotkowo_app kotkowo
+    - name: postgres:link *kotkowo_db *kotkowo_app
+      dokku_service_link:
+        app: *kotkowo_app
+        name: *kotkowo_db
+        service: postgres
+    - name: Setup Phoenix SECRET_KEY_BASE
+      dokku_config:
+        app: *kotkowo_app
+        config:
+          SECRET_KEY_BASE: "{{ secret_key_base }}"
+    - name: Setup Let's encrypt email *kotkowo_app
+      dokku_config:
+        app: *kotkowo_app
+        config:
+          DOKKU_LETSENCRYPT_EMAIL: "maksymilian.jodlowski@gmail.com"
+    - name: dokku clone *kotkowo_app
+      dokku_clone:
+        app: *kotkowo_app
+        repository: https://github.com/kotkowo/kotkowo
+    - name: Enable the letsencrypt plugin for *kotkowo_app
+      dokku_letsencrypt:
+        app: *kotkowo_app
+
+#+end_src
