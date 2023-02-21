@@ -4,16 +4,6 @@
 
 I'll be using Vagrant to setup a clean Ubuntu VM.
 
-** Install DNS plugin for Vagrant
-
-Just so we can refer to our VM with hostname over an IP address.
-
-Will also come in handy later when dokku generates our third level host name based on our app name.
-
-#+begin_src sh
-vagrant plugin install dns
-#+end_src
-
 ** Spin up the VM
 
 #+begin_src sh
@@ -38,6 +28,16 @@ sudo vim /root/.ssh/authorized_keys
 #+end_src
 
 Then append your key that should be in `~/.ssh/id_rsa.pub`
+** Install DNS plugin for Vagrant
+
+Just so we can refer to our VM with hostname over an IP address.
+
+Will also come in handy later when dokku generates our third level host name based on our app name.
+
+#+begin_src sh
+vagrant plugin install dns
+#+end_src
+
 
 * Let's deploy an example app
 
@@ -60,32 +60,6 @@ cd kotkowo-playbook
 nix develop
 
 # Other plebs have to do additional steps of installing ansible and requirements.yml
-#+end_src
-
-** Setup secrets
-Remove the already existing secrets
-
-#+begin_src sh
-rm group_vars/all.yml
-#+end_src
-
-Jump into one of your phonenix projects and generate a secret key
-
-#+begin_src sh
-mix phx.gen.secret
-#+end_src
-
-Create your vault
-
-#+begin_src sh
-ansible-vault create group_vars/all.yml
-#+end_src
-
-And paste your key there
-
-#+begin_src yaml
-secret_key_base: |
-   <PASTE YOUR KEY HERE>
 #+end_src
 
 ** Setup hosts
@@ -127,6 +101,32 @@ Remove these lines:
 -    - name: Enable the letsencrypt plugin for *kotkowo_app
 -      dokku_letsencrypt:
 -        app: *kotkowo_app
+#+end_src
+
+** Setup secrets
+Remove the already existing secrets
+
+#+begin_src sh
+rm group_vars/all.yml
+#+end_src
+
+Jump into one of your phonenix projects and generate a secret key
+
+#+begin_src sh
+mix phx.gen.secret
+#+end_src
+
+Create your vault
+
+#+begin_src sh
+ansible-vault create group_vars/all.yml
+#+end_src
+
+And paste your key there
+
+#+begin_src yaml
+secret_key_base: |
+   <PASTE YOUR KEY HERE>
 #+end_src
 
 ** Run the playbook
